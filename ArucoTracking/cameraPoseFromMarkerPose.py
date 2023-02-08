@@ -13,8 +13,14 @@ import numpy as np
 def cameraPoseFromMarkerPose(rCamToMarker, tCamToMarker):
 
     rCamToMarkerMatrix = cv2.Rodrigues(rCamToMarker)[0]     # convert rotation vector to matrix
-    rMarkerToCamMatrix = np.linalg.inv(rCamToMarkerMatrix)  # inverse of rotation matrix is rotation of camera relative to board
+    rMarkerToCamMatrix = np.matrix(rCamToMarkerMatrix).T    # transpose of rotation matrix is rotation of camera relative to board
     rMarkerToCam = cv2.Rodrigues(rMarkerToCamMatrix)[0]     # camera rotation as a vector
-    tMarkerToCam = np.dot(rMarkerToCamMatrix, np.matrix(-1 * tCamToMarker))     # camera position relative to marker/board
+    tMarkerToCam = np.dot(rMarkerToCamMatrix, np.matrix(-1 * tCamToMarker).T)     # camera position relative to marker/board
     return rMarkerToCam, tMarkerToCam
 
+# test
+rCamToMarker = np.array([0, 0, -0.5 * np.pi])
+tCamToMarker = np.array([-1, 2, 0])
+rMarkerToCam, tMarkerToCam = cameraPoseFromMarkerPose(rCamToMarker, tCamToMarker)
+print("Rotation: {}".format(rMarkerToCam))
+print("Position: {}".format(tMarkerToCam))
