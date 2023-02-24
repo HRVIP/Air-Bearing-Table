@@ -58,7 +58,7 @@ def calibrateCamera(calibFiles, width, height):
 # path --> where to save calibration data
 def saveCalibrationData(mtx, dist, path):
     cv_file = cv2.FileStorage(path, cv2.FILE_STORAGE_WRITE)
-    cv_file.write("camera_matrix", mtx) # why did i do this. i spent like an hour debugging this. i'm a fool
+    cv_file.write("camera_matrix", mtx)
     cv_file.write("dist_coeff", dist)
     cv_file.release()
 
