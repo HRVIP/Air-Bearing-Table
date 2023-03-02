@@ -26,9 +26,10 @@ def calibrateCamera(calibFiles, width, height):
     ### Open directory for calibration images
     images = glob.glob(calibFiles + '/*.jpg')
     found = 0
-    iter = 0
+    i = 0
+    
     for fname in images:
-            iter = iter + 1
+            i = i + 1
             ### Find chessboard corners in a single image
             img = cv2.imread(fname)   # read an image
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) # convert to grayscale
@@ -37,7 +38,7 @@ def calibrateCamera(calibFiles, width, height):
             ### If corners are found, save points and display to user
             if ret == True:
                     found = found + 1
-                    print("Found {} of {} images".format(found, iter))
+                    print("Found {} of {} images".format(found, i))
                     objpoints.append(objp)
                     corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
                     imgpoints.append(corners2)
@@ -63,9 +64,9 @@ def saveCalibrationData(mtx, dist, path):
     cv_file.release()
 
 ### Main function
-width = 6
-height = 9
-calibFiles = '../images/calib_images'
+width = 21
+height = 20
+calibFiles = '/home/pi/OnboardStateEstimate/images/calibImages'
 destination = calibFiles + '/calib.yaml'
 ret, mtx, dist, rvecs, tvecs = calibrateCamera(calibFiles, width, height)
 saveCalibrationData(mtx, dist, destination)
