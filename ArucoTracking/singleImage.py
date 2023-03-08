@@ -1,4 +1,4 @@
-# Initial version of camera pose estimate for use with air-bearing table.
+# Initial version of camera pose estimate for use with air-bearing table - RPi Camera
 # References:
 # Ali Yasin Eser https://aliyasineser.medium.com/aruco-marker-tracking-with-opencv-8cb844c26628#:~:text=ArUco%20markers%20have%20sizes%20from,detect%20them%20in%20the%20image.
 # Josh Day https://github.com/jwday/ComputerVision/blob/master/utilities/calibration_checkerboard.py
