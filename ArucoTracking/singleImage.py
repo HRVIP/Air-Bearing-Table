@@ -10,11 +10,11 @@ import cv2.aruco as aruco
 import os
 
 ### Define useful constants
-marker_side_length = 0.100       # marker side length in m #TODO: determine this value
-calibLoc = '../images/calib_images/calib.yaml'   # calibration file location
-imageLoc = '../images/pleaseWork.jpg'          # location of image to process
-width = int(1280)               # output image width
-height = int(720)              # output image height
+marker_side_length = 0.040       # marker side length in m #TODO: determine this value
+calibLoc = '../images/calibImages/calib.yaml'   # calibration file location
+imageLoc = '../images/image3.jpg'          # location of image to process
+width = int(1920)               # output image width
+height = int(1080)              # output image height
 
 
 ### Draws image without annotations
