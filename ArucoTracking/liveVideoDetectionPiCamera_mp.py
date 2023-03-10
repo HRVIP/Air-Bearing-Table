@@ -1,4 +1,6 @@
 # Pi Camera real-time video marker detection
+# This version uses multiprocessing for improved performance
+# One process for video recording, one for data saving, and one for pose estimation
 
 ### Imports
 import numpy as np
@@ -10,15 +12,16 @@ import os
 import time
 import datetime
 from multiprocessing import Process, Pipe, Manager, Value
+import ctypes
 
 ### Define useful variables
 marker_side_length = 0.040       # marker side length in m #TODO: determine this value
 calibLoc = '../images/calibImages/calib.yaml'   # calibration file location
 width = int(640)               	# output image width (px)
 height = int(480)              	# output image height (px)
-manager = Manager()
-running = manager.Value('i', 0)
-framerate = 48
+manager = Manager()				# manages values shared between processes
+finishedRecording = manager.Value(ctypes.c_bool, False)		# exit condition
+framerate = 32					# camera framerate
 
 ### Import calibration parameters
 print("Import calibration parameters...")
@@ -55,14 +58,14 @@ boardIDs = np.array([[1], [2], [3], [4]], dtype=np.int32)
 board = aruco.Board_create(boardCorners, arucoDict, boardIDs)
     
 ### Processes an image
-def detectPoseInFrame(connRecv, connSend, isRunning):
+def detectPoseInFrame(connRecv, connSend, done):
     ### Set up output window
     cv2.namedWindow('video', cv2.WINDOW_NORMAL)
     cv2.startWindowThread()
     cv2.resizeWindow('video', width, height)
     
     print("Starting marker detection...")
-    while isRunning.value != 2:
+    while done.value != True:
         frame = connRecv.recv()
         blur = cv2.GaussianBlur(frame, (11, 11), 0) # smooth image and remove Gaussian noise
         gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)   # convert to grayscale
@@ -76,28 +79,30 @@ def detectPoseInFrame(connRecv, connSend, isRunning):
     print("Stopping marker detection.")
         
 ### Saves video
-def saveVideo(connRecv, isRunning):
+def saveVideo(connRecv, done):
     size = (width, height)
     now = datetime.datetime.now()
     outfile = "CV_"+now.strftime("%m.%d.%y_%H.%M.%S")+"_{}FPS.avi".format(framerate)
     output = cv2.VideoWriter(outfile, cv2.VideoWriter_fourcc(*'MJPG'), framerate, (width, height))
     print("Starting video saving...")
-    while isRunning.value != 2:
+    while done.value != True:
         frame = connRecv.recv()
         output.write(frame)
     output.release()
     print("Stopping recording.")
     
-    
+# Start processes
 receiveRawFrame, sendRawFrame = Pipe()
 receiveProcessedFrame, sendProcessedFrame = Pipe()
-running.value == 1
-process_marker_detection = Process(target=detectPoseInFrame, args=(receiveRawFrame, sendProcessedFrame, running,))
-process_video_saving = Process(target=saveVideo, args=(receiveProcessedFrame, running,))
+process_marker_detection = Process(target=detectPoseInFrame, args=(receiveRawFrame, sendProcessedFrame, finishedRecording,))
+process_video_saving = Process(target=saveVideo, args=(receiveProcessedFrame, finishedRecording,))
 process_marker_detection.start()
 process_video_saving.start()
 
+# TODO: exit condition (user press q) doesn't seem to be working, so for now, we use a temporary exit condition of running for a certain time
+runtime = 20
 startTime = time.time()
+
 print("Starting video...")
 for image in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
     
@@ -110,10 +115,9 @@ for image in camera.capture_continuous(rawCapture, format="bgr", use_video_port=
     
     # Stop video if user quits
     key = cv2.waitKey(1) & 0xFF
-    # NOTE: user quit isn't working, so for now during testing, recording automaticlaly stops after 20s
-    if key == ord('q') or time.time() - startTime > 20:                 
-        running.value == 2
-        print("Ending all recording.")
+    if key == ord('q') or time.time() - startTime > runtime:                 
+        finishedRecording = True
+        print("Stopping all recording.")
         break
 
 # Cleanup
