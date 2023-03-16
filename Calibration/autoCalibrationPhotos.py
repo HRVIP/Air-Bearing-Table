@@ -4,13 +4,13 @@
 import cv2
 from datetime import datetime
 
-loc = '../images/calib_images'  # Default location
+loc = '../images/calib_images_1_5in'  # Default location
 
 def capture(loc):
     webcam = cv2.VideoCapture(0)
     img_int = 0
 
-    while img_int < 300:
+    while img_int < 100:
         check, frame = webcam.read()
         cv2.imshow("Capturing", frame)
         cv2.waitKey(500)

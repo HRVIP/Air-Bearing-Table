@@ -17,7 +17,7 @@ import csv
 
 ### Define useful variables
 marker_side_length = 0.040       				# marker side length in m
-calibLoc = '../images/calibImages/calib.yaml'   # calibration file location
+calibLoc = '../images/calibImages/calib_april_11_imperial_units.yaml'   # calibration file location
 width = int(640)               					# output image width (px)
 height = int(480)              					# output image height (px)
 manager = Manager()								# manages values shared between processes
@@ -137,7 +137,7 @@ for image in camera.capture_continuous(rawCapture, format="bgr", use_video_port=
     # Stop video if user quits
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q') or time.time() - startTime > runtime:                 
-        finishedRecording = True
+        finishedRecording.value = True
         print("Stopping all recording.")
         break
 

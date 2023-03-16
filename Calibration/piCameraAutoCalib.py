@@ -10,19 +10,19 @@ import time
 imageDir = '/home/pi/OnboardStateEstimate/images/'  # Default image save location
 if (os.path.isdir(imageDir)) == False:
     os.mkdir(imageDir)
-calibDir = imageDir + '/calibImages'
+calibDir = imageDir + '/calibImages_1_5_in-res'
 if (os.path.isdir(calibDir)) == False:
     os.mkdir(calibDir)
 
 # Set up camera
-camera = picamera.PiCamera(resolution=(1920, 1080), framerate=30)
+camera = picamera.PiCamera(resolution=(640, 480), framerate=30)
 time.sleep(2)
 camera.shutter_speed = camera.exposure_speed
-rawCapture = PiRGBArray(camera, size=(1920, 1080))
+rawCapture = PiRGBArray(camera, size=(640, 480))
 
 # Keep track of how many images are acpatured
 img_int = 0
-numImagesRequired = 300
+numImagesRequired = 200
 
 # Continuously capture calibration images
 for image in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
