@@ -1,3 +1,8 @@
+### DO NOT use this version - it does not account for distances.
+### It is also designed to run on a Raspberry Pi, which will take a long time to calibrate.
+### Instead, gather calibration images from Raspberry Pi camera, export to another computer,
+### then run chessboardCalibWithSizes.
+
 ### Imports
 import numpy as np
 import cv2
