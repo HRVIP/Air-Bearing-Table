@@ -35,11 +35,11 @@ f.P *= 100.
 
 # Measurement noise
 sensorVariance = 0.2
-f.R *= sensorVariance
+f.R *= sensorVariance * 0.1
 
 # Process noise
 # Uncertainty in our predictive model
-f.Q = Q_discrete_white_noise(dim=3, dt=0.1, var=0.13)
+f.Q = Q_discrete_white_noise(dim=3, dt=0.1, var=10.85)
 
 # In our actual Kalman filter, we'll use real-time data here
 # In this case, let's say we're measuring the position of an object moving in a sinusoidal pattern
@@ -63,13 +63,15 @@ for i in range(0, len(measPosition)):
 
 # Plot results
 fig, (ax1, ax2, ax3) = plt.subplots(3, sharex=True)
-ax1.plot(sampleTimes, measPosition, label = "Measured Position")
-ax1.plot(sampleTimes, filteredPosition, label = "Filtered Position")
-ax1.legend()
+ax1.plot(sampleTimes, measPosition, label = "Measured State")
+ax1.plot(sampleTimes, filteredPosition, label = "Filtered State")
+ax1.legend(loc = "upper right", fontsize="8")
 ax2.plot(sampleTimes, measVelocity, label = "Measured Velocity")
 ax2.plot(sampleTimes, filteredVelocity, label = "Filtered Velocity")
-ax2.legend()
 ax3.plot(sampleTimes, measAccel, label = "Measured Acceleration")
 ax3.plot(sampleTimes, filteredAccel, label = "Filtered Acceleration")
-ax3.legend()
+ax3.set_xlabel("Time (s)")
+ax1.set_ylabel("Position (m)", fontsize="8")
+ax2.set_ylabel("Velocity (m/s)", fontsize="8")
+ax3.set_ylabel("Acceleration (m/s^2)", fontsize="8")
 plt.show()

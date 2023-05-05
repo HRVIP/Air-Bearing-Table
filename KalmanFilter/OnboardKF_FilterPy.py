@@ -15,9 +15,9 @@ from filterpy.kalman import KalmanFilter
 import csv
 
 ### I2C DEVICE SETUP
-i2c = board.I2C()                   # initialize I2C using SCL and SDA
-rtc = adafruit_ds3231.DS3231(i2c)   # connect to RTC
-icm = adafruit_icm20x.ICM20948(i2c) # connect to IMU
+i2c = board.I2C()                           # initialize I2C
+icm = adafruit_icm20x.ICM20948(i2c, 0x69)   # connect to IMU
+rtc = adafruit_ds3231.DS3231(i2c, 0x68)     # connect to RTC
 
 ### OUTPUT FILE SETUP
 now = rtc.datetime		# time at which we save data
@@ -142,7 +142,7 @@ process_CSV.start()
 
 ### KALMAN FILTER SETUP
 dt=0.200    # placeholder for elapsed time
-f = KalmanFilter(dim_x=8,dim_z=6)
+f = KalmanFilter(dim_x=8, dim_z=6)
 f.x = np.array([0., 0., 0., 0., 0., 0., 0., 0.])    # initial state (x, vx, ax, y, vy, ay, theta, wz)
 f.F = np.array([1., dt, 0.5*dt*dt, 0., 0., 0., 0., 0.],
                [0., 1., dt, 0., 0., 0., 0., 0.],
