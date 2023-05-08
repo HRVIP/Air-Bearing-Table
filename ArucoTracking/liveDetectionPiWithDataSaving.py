@@ -17,7 +17,7 @@ import csv
 
 ### Define useful variables
 marker_side_length = 0.040       				# marker side length in m
-calibLoc = '../images/calibImages/calib_april_11_imperial_units.yaml'   # calibration file location
+calibLoc = '../images/calibImages/calib_april_11_low_res.yaml'   # calibration file location
 width = int(640)               					# output image width (px)
 height = int(480)              					# output image height (px)
 manager = Manager()								# manages values shared between processes
