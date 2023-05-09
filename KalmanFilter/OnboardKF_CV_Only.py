@@ -5,6 +5,7 @@ import cv2.aruco as aruco
 from picamera.array import PiRGBArray
 from picamera import PiCamera
 import os
+import sys
 import datetime
 import time
 from multiprocessing import Process, Pipe, Manager, Value
@@ -15,9 +16,13 @@ import csv
 now = datetime.datetime.now()		# time at which we save data
 datetimeStr = "{:02d}-{:02d}-{:02d}_{:02d}{:02d}{:02d}".format(now.month, now.day, now.year%1000, now.hour, now.minute, now.second)
 outputDir = '/home/pi/OnboardStateEstimate/Air-Bearing-Table/ArucoTracking/Outputs'		# data saving directory
+outfileCSV = outputDir + "/OnboardKF_CV_" + datetimeStr + ".csv"                        # for CSV output
 if os.path.isdir(outputDir) == False:		# create data saving directory only if it doesn't already exist
-    os.mkdir(outputDir)
-outfileCSV = outputDir + "/OnboardKF_CV_" + datetimeStr + ".csv"               # for CSV output
+    try:
+        os.mkdir(outputDir)
+    except:
+        print("Failed to create output directory. Saving in current working directory.")
+        outfileCSV = datetimeStr + ".csv"
 outfileHeader = ['Time', 'x_meas', 'y_meas', 'theta_meas', 'x_filtered', 'vx_filtered', 'vy_filtered', 'theta_z_filtered', 'wz_filtered']	# header for KF CSV output
 
 ### CV SETUP
@@ -27,10 +32,14 @@ width = int(640)               					# output image width (px)
 height = int(480)              					# output image height (px)
 framerate = 32									# camera framerate
 
-print("Importing calibration parameters...")
-calibFile = cv2.FileStorage(calibLoc, cv2.FILE_STORAGE_READ)    # load in camera calibration file
-cameraMatrix = calibFile.getNode("camera_matrix").mat()         # camera calibration matrix
-distCoeffs = calibFile.getNode("dist_coeff").mat()              # camera distortion matrix
+if os.path.isfile(calibLoc):
+    print("Importing calibration parameters...")
+    calibFile = cv2.FileStorage(calibLoc, cv2.FILE_STORAGE_READ)    # load in camera calibration file
+    cameraMatrix = calibFile.getNode("camera_matrix").mat()         # camera calibration matrix
+    distCoeffs = calibFile.getNode("dist_coeff").mat()              # camera distortion matrix
+else:
+    print("Calibration file path is invalid.")
+    sys.exit()
 
 print("Setting up camera...")
 camera = PiCamera()                                     # connect to Pi camera
@@ -63,36 +72,53 @@ tvec_init = np.empty(3)		# initial estimate of board position - can be empty or 
 def ReadCV(x_meas, y_meas, theta_meas):
     while True:
         for image in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
-            frame = rawCapture.array
+
+            # Process image
+            frame = image.array
             blur = cv2.GaussianBlur(frame, (11, 11), 0)
             gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)
+
+            # Detect markers
             corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, arucoDict, parameters=arucoParams, cameraMatrix=cameraMatrix, distCoeff=distCoeffs) # marker detection
-            ret, rCamToMarker, tCamToMarker = aruco.estimatePoseBoard(corners, ids, board, cameraMatrix, distCoeffs, rvec_init, tvec_init)	# estimate board pose using markers
-            rCamToMarkerMatrix = cv2.Rodrigues(rCamToMarker)[0]     # convert rotation vector to matrix
-            rMarkerToCamMatrix = np.matrix(rCamToMarkerMatrix).T    # transpose of rotation matrix is rotation of camera relative to board
-            rMarkerToCam = cv2.Rodrigues(rMarkerToCamMatrix)[0]     # camera rotation as a vector
-            tMarkerToCam = np.dot(rMarkerToCamMatrix, np.matrix(-1 * tCamToMarker).T)  # camera position relative to marker/board
-            x_meas.value = tMarkerToCam[0]
-            y_meas.value = tMarkerToCam[1]
-            theta_meas.value = rMarkerToCam[2]
+
+            # Detect marker pose ONLY if markers are detected
+            if (len(corners) > 0):
+                ret, rCamToMarker, tCamToMarker = aruco.estimatePoseBoard(corners, ids, board, cameraMatrix, distCoeffs, rvec_init, tvec_init)	# estimate board pose using markers
+
+                # If marker pose estimation is successful, then use that to obtain camera pose
+                if (ret == True):
+                    rCamToMarkerMatrix = cv2.Rodrigues(rCamToMarker)[0]     # convert rotation vector to matrix
+                    rMarkerToCamMatrix = np.matrix(rCamToMarkerMatrix).T    # transpose of rotation matrix is rotation of camera relative to board
+                    rMarkerToCam = cv2.Rodrigues(rMarkerToCamMatrix)[0]     # camera rotation as a vector
+                    tMarkerToCam = np.dot(rMarkerToCamMatrix, np.matrix(-1 * tCamToMarker).T)  # camera position relative to marker/board
+                    x_meas.value = tMarkerToCam[0]
+                    y_meas.value = tMarkerToCam[1]
+                    theta_meas.value = rMarkerToCam[2]
 
 ### DATA SAVING
 # Receives data from main process and saves to a CSV
 def SaveCSV(receiveSaveData):
 
     # Set up CSV file
-    with open(outfileCSV, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(outfileHeader)
-        csvfile.close()
+    try:
+        with open(outfileCSV, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(outfileHeader)
+            csvfile.close()
+    except:
+        print("Failed to set up CSV header.")
 
     # Save data continuously as updated states are calculated
     while True:
         data = receiveSaveData.recv()    # receive data from main process
-        with open(outfileCSV, 'a', newline='') as csvfile:  # append to CSV
-            writer = csv.writer(csvfile)
-            writer.writerow(data)
-            csvfile.close()
+        try:
+            with open(outfileCSV, 'a', newline='') as csvfile:  # append to CSV
+                writer = csv.writer(csvfile)
+                writer.writerow(data)
+                csvfile.close()
+        except:
+            print("Failed to write the following CSV data:")
+            print(data)
 
 ### MULTIPROCESSING
 manager = Manager()     # manages multiprocesing variables
@@ -110,8 +136,11 @@ receiveSaveData, sendSaveData = Pipe()        # contains filtered/updated state 
 # Start processes
 process_CV = Process(target=ReadCV, args=(x_meas, y_meas, theta_meas,))
 process_CSV = Process(target=SaveCSV, args=(receiveSaveData,))
-process_CV.start()
-process_CSV.start()
+try:
+    process_CV.start()
+    process_CSV.start()
+except:
+    print("Failed to start subprocesses. Reboot the Pi to make sure all previous multiprocessing tasks have been properly terminated, then try again.")
 
 ### KALMAN FILTER SETUP
 dt = 0.200    # placeholder for elapsed time
