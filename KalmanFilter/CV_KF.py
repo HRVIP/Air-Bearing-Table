@@ -15,6 +15,8 @@ from multiprocessing import Process, Pipe, Manager, Value
 import ctypes
 from filterpy.kalman import KalmanFilter
 import csv
+# import pandas
+# import matplotlib.pyplot as plt
 
 ### Define useful variables
 marker_side_length = 0.040       				# marker side length in m
@@ -77,6 +79,7 @@ def kalmanFilterProcess(x_meas, y_meas, theta_meas, sendSaveData, done):
     print("Setting up Kalman Filter...")
     dt = 0.200    # placeholder for elapsed time
     f = KalmanFilter(dim_x=6, dim_z=3)
+    t_start = datetime.datetime.now()
     print("Created Kalman Filter! Setting up initial state...")
     f.x = np.array([0., 0., 0., 0., 0., 0.])    # initial state (x, vx, y, vy, theta, wz)
     f.F = np.array([[1., dt, 0., 0., 0., 0.],
@@ -111,12 +114,12 @@ def kalmanFilterProcess(x_meas, y_meas, theta_meas, sendSaveData, done):
                         [0., 0., 0., 0., 0., 1.]])
 
         # Read sensors, predict, and update
-        z = np.array([x_meas.value, y_meas.value, theta_meas.value]).T
+        z = np.array([x_meas.value, y_meas.value, theta_meas.value])
         f.predict()
-        f.update(z)
+        f.update(z.T)
 
         # Save results
-        allData = np.concatenate((np.array([now]), f.z.T, f.x.T))
+        allData = np.concatenate((np.array([(now - t_start).total_seconds()]), f.z, f.x))
         sendSaveData.send(allData)
 
 ### Saves pose estimation data
@@ -188,5 +191,19 @@ cv2.destroyAllWindows()
 process_KF.terminate()
 process_KF.join()
 process_CSV.terminate()
-process_CS.join()
-print("Done!")
+process_CSV.join()
+print("Done collecting data!")
+
+### plot results!
+outdata = pd.read_csv(outfileCSV)
+deltaT = outdata.Time
+x_meas = outdata.x_meas
+y_meas = outdata.y_meas
+theta_meas = outdata.theta_meas
+x_out = outdata.x_out
+y_out = outdata.y_out
+theta_out = outdata.theta_out
+plt.plot(deltaT, x_meas, label="measured")
+plt.plot(deltaT, x_out, label="filtered")
+plt.legend()
+plt.show()
