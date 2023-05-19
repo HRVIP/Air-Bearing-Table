@@ -25,12 +25,12 @@ if os.path.isdir(outputDir) == False:		# create data saving directory only if it
         outfileCSV = datetimeStr + ".csv"
 outfileHeader = ['Time', 'x_meas', 'y_meas', 'theta_meas', 'x_filtered', 'vx_filtered', 'vy_filtered', 'theta_z_filtered', 'wz_filtered']	# header for KF CSV output
 
-### CV SETUP
+### Define useful variables
 marker_side_length = 0.040       				# marker side length in m
-calibLoc = '../images/calibImages/calib_april_11_imperial_units.yaml'   # calibration file location
+calibLoc = '../images/calibImages/calib_april_11_low_res.yaml'   # calibration file location
 width = int(640)               					# output image width (px)
 height = int(480)              					# output image height (px)
-framerate = 32									# camera framerate
+framerate = 40									# camera framerate
 
 if os.path.isfile(calibLoc):
     print("Importing calibration parameters...")
@@ -42,21 +42,23 @@ else:
     sys.exit()
 
 print("Setting up camera...")
-camera = PiCamera()                                     # connect to Pi camera
-camera.resolution = (width, height)						# specify resolution - should be the same as in calibration file
+camera = PiCamera()
+camera.resolution = (width, height)						# TODO: determine relationship between resolution and runtime (tradeoff with accuracy?)
 camera.framerate = framerate							# frames per second
 rawCapture = PiRGBArray(camera, size=(width, height))	# 3D RGB array
-time.sleep(1)				                            # allow camera to warm up
+time.sleep(1)											# allow camera to warm up
 
 print("Setting up Aruco parameters...")
 arucoDict = cv2.aruco.getPredefinedDictionary(0)		# small dictionary of 4x4 markers
 arucoParams = cv2.aruco.DetectorParameters_create()     # default aruco parameters
 
 print("Setting up Aruco board...")
-w = marker_side_length			# marker width (m)
-h = marker_side_length			# marker height (m)
-dx = 0.002			            # distance between markers (m)
-origin = 0.0		        # "origin" of ArUco board, in board coordinate system (0, 0, 0)
+w = 0.040			# marker width (m)
+h = 0.040			# marker height (m)
+dx = 0.002			# distance between markers (m)
+origin = 0.0		# "origin" of ArUco board, in board coordinate system (0, 0, 0)
+rvec_init = np.empty(3)		# initial estimate of board rotation - can be empty or initial guess
+tvec_init = np.empty(3)		# initial estimate of board position - can be empty or initial guess
 marker1 = np.array([[origin, h+h+dx, origin], [w, h+h+dx, origin], [w, h+dx, origin], [origin, h+dx, origin]], dtype=np.float32)
 marker2 = np.array([[w+dx, h+h+dx, origin], [w+w+dx, h+h+dx, origin], [w+w+dx, h+dx, origin], [w+dx, h+dx, origin]], dtype=np.float32)
 marker3 = np.array([[origin, h, origin], [w, h, origin], [w, origin, origin], [origin, origin, origin]], dtype=np.float32)
@@ -64,32 +66,35 @@ marker4 = np.array([[w+dx, h, origin], [w+w+dx, h, origin], [w+w+dx, origin, ori
 boardCorners = np.array([marker1, marker2, marker3, marker4])
 boardIDs = np.array([[1], [2], [3], [4]], dtype=np.int32)		# ArUco ID of each marker (must correspond to order in which markers are defined!)
 board = aruco.Board_create(boardCorners, arucoDict, boardIDs)	# actual board object
-rvec_init = np.empty(3)		# initial estimate of board rotation - can be empty or initial guess
-tvec_init = np.empty(3)		# initial estimate of board position - can be empty or initial guess
 
 ### SENSOR: CV READING
 # Read CV system to get x-y position and z-rotation
-def ReadCV(x_meas, y_meas, theta_meas):
+def ReadCV(x_meas, y_meas, theta_meas, rawCapture, camera):
+    print("Detection Started!")
+    cv2.namedWindow('video', cv2.WINDOW_NORMAL)
+    cv2.startWindowThread()
+    cv2.resizeWindow('video', width, height)
     while True:
-        for image in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
+        image = camera.capture(rawCapture, format="bgr", use_video_port=True)
 
-            # Process image
-            frame = image.array
-            blur = cv2.GaussianBlur(frame, (11, 11), 0)
-            gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)
+        # Process image
+        frame = image.array
+        blur = cv2.GaussianBlur(frame, (11, 11), 0)
+        gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)
 
-            # Detect markers
-            corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, arucoDict, parameters=arucoParams, cameraMatrix=cameraMatrix, distCoeff=distCoeffs) # marker detection
-
-            ret, rCamToMarker, tCamToMarker = aruco.estimatePoseBoard(corners, ids, board, cameraMatrix, distCoeffs, rvec_init, tvec_init)	# estimate board pose using markers
-
-            # rCamToMarkerMatrix = cv2.Rodrigues(rCamToMarker)[0]     # convert rotation vector to matrix
-            # rMarkerToCamMatrix = np.matrix(rCamToMarkerMatrix).T    # transpose of rotation matrix is rotation of camera relative to board
-            # rMarkerToCam = cv2.Rodrigues(rMarkerToCamMatrix)[0]     # camera rotation as a vector
-            # tMarkerToCam = np.dot(rMarkerToCamMatrix, np.matrix(-1 * tCamToMarker).T)  # camera position relative to marker/board
-            x_meas.value = tCamToMarker[0]
-            y_meas.value = tCamToMarker[1]
-            theta_meas.value = rCamToMarker[2]
+        # Detect markers
+        corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, arucoDict, parameters=arucoParams, cameraMatrix=cameraMatrix, distCoeff=distCoeffs) # marker detection
+        ret, rvec, tvec = aruco.estimatePoseBoard(corners, ids, board, cameraMatrix, distCoeffs, rvec_init, tvec_init)	# estimate board pose using markers
+        x_meas.value = tvec[0]
+        y_meas.value = tvec[1]
+        theta_meas.value = rvec[2]
+        print("%f, %f, %f").format(tvec[0], tvec[1], rvec[2])
+        capWithAxes = cv2.drawFrameAxes(frame, cameraMatrix, distCoeffs, rvec, tvec, 0.1)		# real-time visualization: draw axes
+        cv2.imshow('video', capWithAxes)		
+        rawCapture.truncate(0)
+        
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
 ### DATA SAVING
 # Receives data from main process and saves to a CSV
@@ -134,14 +139,11 @@ receiveSaveData, sendSaveData = Pipe()        # contains filtered/updated state 
 
 # Start processes
 print("Defining processes..")
-process_CV = Process(target=ReadCV, args=(x_meas, y_meas, theta_meas,))
+process_CV = Process(target=ReadCV, args=(x_meas, y_meas, theta_meas, rawCapture, camera,))
 process_CSV = Process(target=SaveCSV, args=(receiveSaveData,))
 print("Starting processes...")
-try:
-    process_CV.start()
-    process_CSV.start()
-except:
-    print("Failed to start subprocesses. Reboot the Pi to make sure all previous multiprocessing tasks have been properly terminated, then try again.")
+process_CV.start()
+process_CSV.start()
 
 ### KALMAN FILTER SETUP
 print("Setting up Kalman Filter...")
