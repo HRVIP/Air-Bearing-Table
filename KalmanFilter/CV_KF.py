@@ -14,9 +14,10 @@ import datetime
 from multiprocessing import Process, Pipe, Manager, Value
 import ctypes
 from filterpy.kalman import KalmanFilter
+from filterpy.common import Q_discrete_white_noise
 import csv
-# import pandas
-# import matplotlib.pyplot as plt
+import pandas as pd
+import matplotlib.pyplot as plt
 
 ### Define useful variables
 marker_side_length = 0.040       				# marker side length in m
@@ -93,8 +94,8 @@ def kalmanFilterProcess(x_meas, y_meas, theta_meas, sendSaveData, done):
                     [0., 0., 1., 0., 0., 0.],
                     [0., 0., 0., 0., 1., 0.]])  # measurement matrix (map states to measurements)
     print("Setting up noise matrices...")
-    f.P = np.identity(6) # TODO: this is a placeholder for cov matrix
-    f.R = np.identity(3) # TODO: placeholder for measurement noise
+    f.P = 10 * np.identity(6) # TODO: this is a placeholder for cov matrix
+    f.R = 8 * np.identity(3) # TODO: placeholder for measurement noise
     f.Q = np.identity(6) # TODO: placeholder for process noise
 
     prev = datetime.datetime.now()
