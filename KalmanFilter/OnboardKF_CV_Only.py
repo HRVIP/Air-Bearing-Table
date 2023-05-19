@@ -81,19 +81,15 @@ def ReadCV(x_meas, y_meas, theta_meas):
             # Detect markers
             corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, arucoDict, parameters=arucoParams, cameraMatrix=cameraMatrix, distCoeff=distCoeffs) # marker detection
 
-            # Detect marker pose ONLY if markers are detected
-            if (len(corners) > 0):
-                ret, rCamToMarker, tCamToMarker = aruco.estimatePoseBoard(corners, ids, board, cameraMatrix, distCoeffs, rvec_init, tvec_init)	# estimate board pose using markers
+            ret, rCamToMarker, tCamToMarker = aruco.estimatePoseBoard(corners, ids, board, cameraMatrix, distCoeffs, rvec_init, tvec_init)	# estimate board pose using markers
 
-                # If marker pose estimation is successful, then use that to obtain camera pose
-                if (ret == True):
-                    rCamToMarkerMatrix = cv2.Rodrigues(rCamToMarker)[0]     # convert rotation vector to matrix
-                    rMarkerToCamMatrix = np.matrix(rCamToMarkerMatrix).T    # transpose of rotation matrix is rotation of camera relative to board
-                    rMarkerToCam = cv2.Rodrigues(rMarkerToCamMatrix)[0]     # camera rotation as a vector
-                    tMarkerToCam = np.dot(rMarkerToCamMatrix, np.matrix(-1 * tCamToMarker).T)  # camera position relative to marker/board
-                    x_meas.value = tMarkerToCam[0]
-                    y_meas.value = tMarkerToCam[1]
-                    theta_meas.value = rMarkerToCam[2]
+            # rCamToMarkerMatrix = cv2.Rodrigues(rCamToMarker)[0]     # convert rotation vector to matrix
+            # rMarkerToCamMatrix = np.matrix(rCamToMarkerMatrix).T    # transpose of rotation matrix is rotation of camera relative to board
+            # rMarkerToCam = cv2.Rodrigues(rMarkerToCamMatrix)[0]     # camera rotation as a vector
+            # tMarkerToCam = np.dot(rMarkerToCamMatrix, np.matrix(-1 * tCamToMarker).T)  # camera position relative to marker/board
+            x_meas.value = tCamToMarker[0]
+            y_meas.value = tCamToMarker[1]
+            theta_meas.value = rCamToMarker[2]
 
 ### DATA SAVING
 # Receives data from main process and saves to a CSV
@@ -121,9 +117,11 @@ def SaveCSV(receiveSaveData):
             print(data)
 
 ### MULTIPROCESSING
+print("Setting up multiprocessing manager...")
 manager = Manager()     # manages multiprocesing variables
 
 # Measured variables
+print("Setting up multiprocessing variables...")
 x_meas = manager.Value('d', 0.0)
 y_meas = manager.Value('d', 0.0)
 theta_meas = manager.Value('d', 0.0)
@@ -131,11 +129,14 @@ theta_meas = manager.Value('d', 0.0)
 # Pipe to send values to data saving
 # Data saving uses a pipe instead of manager values since it must wait for updated values from KF
 # whereas sensor readings are updated continuously - shouldn't "wait" on anything like a pipe
+print("Setting up multiprocessing pipe...")
 receiveSaveData, sendSaveData = Pipe()        # contains filtered/updated state from KF
 
 # Start processes
+print("Defining processes..")
 process_CV = Process(target=ReadCV, args=(x_meas, y_meas, theta_meas,))
 process_CSV = Process(target=SaveCSV, args=(receiveSaveData,))
+print("Starting processes...")
 try:
     process_CV.start()
     process_CSV.start()
@@ -143,37 +144,44 @@ except:
     print("Failed to start subprocesses. Reboot the Pi to make sure all previous multiprocessing tasks have been properly terminated, then try again.")
 
 ### KALMAN FILTER SETUP
+print("Setting up Kalman Filter...")
 dt = 0.200    # placeholder for elapsed time
 f = KalmanFilter(dim_x=6, dim_z=3)
+print("Created Kalman Filter! Setting up initial state...")
 f.x = np.array([0., 0., 0., 0., 0., 0.])    # initial state (x, vx, y, vy, theta, wz)
-f.F = np.array([1., dt, 0., 0., 0., 0.],
+f.F = np.array([[1., dt, 0., 0., 0., 0.],
                [0., 1., 0., 0., 0., 0.],
                [0., 0., 1., dt, 0., 0.],
                [0., 0., 0., 1., 0., 0.],
                [0., 0., 0., 0., 1., dt],
-               [0., 0., 0., 0., 0., 1.])        # state transition matrix
+               [0., 0., 0., 0., 0., 1.]])        # state transition matrix
+print("Setting up measurement matrix...")
 f.H = np.array([[1., 0., 0., 0., 0., 0.],
                 [0., 0., 1., 0., 0., 0.],
                 [0., 0., 0., 0., 1., 0.]])  # measurement matrix (map states to measurements)
-f.P = np.identity(8) # TODO: this is a placeholder for cov matrix
-f.R = np.identity(6) # TODO: placeholder for measurement noise
-f.Q = np.identity(8) # TODO: placeholder for process noise
+print("Setting up noise matrices...")
+f.P = np.identity(6) # TODO: this is a placeholder for cov matrix
+f.R = np.identity(3) # TODO: placeholder for measurement noise
+f.Q = np.identity(6) # TODO: placeholder for process noise
 
 ### MAIN LOOP
+print("Entering main loop!")
 prev = datetime.datetime.now()
-while True:
+start = prev
+runtime = 20
+while (prev - start).total_seconds() < runtime:
     # Get elapsed time for prediction
     now = datetime.datetime.now()
     dt = (now - prev).total_seconds()
     prev = now
 
     # Update state transition matrix using dt
-    f.F = np.array([1., dt, 0., 0., 0., 0.],
+    f.F = np.array([[1., dt, 0., 0., 0., 0.],
                    [0., 1., 0., 0., 0., 0.],
                    [0., 0., 1., dt, 0., 0.],
                    [0., 0., 0., 1., 0., 0.],
                    [0., 0., 0., 0., 1., dt],
-                   [0., 0., 0., 0., 0., 1.])
+                   [0., 0., 0., 0., 0., 1.]])
 
     # Read sensors, predict, and update
     z = np.array([x_meas.value, y_meas.value, theta_meas.value]).T
