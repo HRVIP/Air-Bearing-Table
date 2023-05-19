@@ -63,16 +63,15 @@ board = aruco.Board_create(boardCorners, arucoDict, boardIDs)	# actual board obj
 ### Set up output files
 size = (width, height)				# video output size
 now = datetime.datetime.now()		# time at which we save data
-outputDir = '/home/pi/OnboardStateEstimate/Air-Bearing-Table/ArucoTracking/Outputs'		# data saving directory
+outputDir = '/home/pi/OnboardStateEstimate/Air-Bearing-Table/KalmanFilter/Outputs'		# data saving directory
 if os.path.isdir(outputDir) == False:		# create data saving directory only if it doesn't already exist
     os.mkdir(outputDir)
-outfile = outputDir + "/CV_"+now.strftime("%m.%d.%y_%H.%M.%S")+"_{}FPS".format(framerate)
-outfileVideo = outfile + ".h264"		# for video output
+outfile = outputDir + "/CV_KF_"+now.strftime("%m.%d.%y_%H.%M.%S")+"_{}FPS".format(framerate)
 outfileCSV = outfile + ".csv"			# for pose estimate output
-outfileHeader = ['Time', 'Rvec[x]', 'Rvec[y]', 'Rvec[z]', 'Tvec[x]', 'Tvec[y]', 'Tvec[z]']					# header for CSV pose output
+outfileHeader = ['Time', 'x_meas', 'y_meas', 'theta_meas', 'x_out', 'vx_out', 'y_out', 'vy_out', 'theta_out', 'w_out']					# header for CSV pose output
 
 ### Processes an image
-def detectPoseInFrame(connRecv, connSend, done):
+def getCVMeasurement(x_meas, y_meas, theta_meas, done):
     
     ### Set up output window
     cv2.namedWindow('video', cv2.WINDOW_NORMAL)
@@ -81,24 +80,26 @@ def detectPoseInFrame(connRecv, connSend, done):
     print("Starting marker detection...")
     
     ### Detect markers
-    startTime = time.time()
     while done.value != True:
-        frame = connRecv.recv()							# receive raw frame from Pi camera
+
+        frame = camera.capture(rawCapture, format="bgr", use_video_port=True)							# receive raw frame from Pi camera
         blur = cv2.GaussianBlur(frame, (11, 11), 0) 	# smooth image and remove Gaussian noise
         gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)   # convert to grayscale
         corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, arucoDict, parameters=arucoParams, cameraMatrix=cameraMatrix, distCoeff=distCoeffs) # marker detection
         ret, rvec, tvec = aruco.estimatePoseBoard(corners, ids, board, cameraMatrix, distCoeffs, rvec_init, tvec_init)	# estimate board pose using markers
         capWithAxes = cv2.drawFrameAxes(frame, cameraMatrix, distCoeffs, rvec, tvec, 0.1)		# real-time visualization: draw axes
-        cv2.imshow('video', capWithAxes)														# display image with axes
-        now = time.time() - startTime
-        connSend.send([now, rvec[0], rvec[1], rvec[2], tvec[0], tvec[1], tvec[2]])	# send data via pipe to CSV saving process
-    
+        cv2.imshow('video', capWithAxes)
+        rawCapture.truncate(0)
+        x_meas.value = tvec[0]
+        y_meas.value = tvec[1]
+        theta_meas.value = rvec[2]
+
     ### Cleanup
     cv2.destroyAllWindows()
     print("Stopping marker detection.")
 
 ### Saves pose estimation data
-def savePoseEstimate(connRecv, done):
+def saveData(connRecv, done):
     
     # Set up CSV file
     with open(outfileCSV, 'w', newline='') as csvfile:
@@ -115,39 +116,71 @@ def savePoseEstimate(connRecv, done):
             csvfile.close()
     
 # Start processes
-receiveRawFrame, sendRawFrame = Pipe()			# sends raw frame from main process (Pi camera) to pose estimation process
-receivePoseData, sendPoseData = Pipe()			# sends pose estimate data from pose estimation process to data saving process
-process_marker_detection = Process(target=detectPoseInFrame, args=(receiveRawFrame, sendPoseData, finishedRecording,))	# estimates pose
-process_data_saving = Process(target=savePoseEstimate, args=(receivePoseData, finishedRecording,))						# saves pose data to CSV
-process_marker_detection.start()
-process_data_saving.start()
+x_meas = manager.Value('d', 0.0)
+y_meas = manager.Value('d', 0.0)
+theta_meas = manager.Value('d', 0.0)
+receiveSaveData, sendSaveData = Pipe()			# sends pose estimate data from pose estimation process to data saving process
+process_CV = Process(target=getCVMeasurement, args=(x_meas, y_meas, theta_meas, finishedRecording,))	# estimates pose
+process_Data = Process(target=saveData, args=(receiveSaveData, finishedRecording,))						# saves pose data to CSV
+process_CV.start()
+process_Data.start()
 
-# TODO: exit condition (user press q) doesn't seem to be working, so for now, we use a temporary exit condition of running for a certain time
 runtime = 20
 startTime = time.time()
 
-print("Starting capture...")
-camera.start_recording(outfileVideo)		#TODO: recording is kind of jumpy? figure out why (or do we need recording in the first place?)
-for image in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
-    
-    frame = image.array			# capture frame as an array
-    sendRawFrame.send(frame)	# send for pose estimate processing
-    rawCapture.truncate(0)		# clear and prepare for next frame
-    
-    # Stop video if user quits
+### KALMAN FILTER SETUP
+print("Setting up Kalman Filter")
+dt = 0.200    # placeholder for elapsed time
+f = KalmanFilter(dim_x=6, dim_z=3)
+f.x = np.array([0., 0., 0., 0., 0., 0.])    # initial state (x, vx, y, vy, theta, wz)
+f.F = np.array([1., dt, 0., 0., 0., 0.],
+               [0., 1., 0., 0., 0., 0.],
+               [0., 0., 1., dt, 0., 0.],
+               [0., 0., 0., 1., 0., 0.],
+               [0., 0., 0., 0., 1., dt],
+               [0., 0., 0., 0., 0., 1.])        # state transition matrix
+f.H = np.array([[1., 0., 0., 0., 0., 0.],
+                [0., 0., 1., 0., 0., 0.],
+                [0., 0., 0., 0., 1., 0.]])  # measurement matrix (map states to measurements)
+f.P = np.identity(8) # TODO: this is a placeholder for cov matrix
+f.R = np.identity(6) # TODO: placeholder for measurement noise
+f.Q = np.identity(8) # TODO: placeholder for process noise
+
+print("Starting filter...")
+prev = datetime.datetime.now()
+while True:
+    # Get elapsed time for prediction
+    now = datetime.datetime.now()
+    dt = (now - prev).total_seconds()
+    prev = now
+
+    # Update state transition matrix using dt
+    f.F = np.array([1., dt, 0., 0., 0., 0.],
+                   [0., 1., 0., 0., 0., 0.],
+                   [0., 0., 1., dt, 0., 0.],
+                   [0., 0., 0., 1., 0., 0.],
+                   [0., 0., 0., 0., 1., dt],
+                   [0., 0., 0., 0., 0., 1.])
+
+    # Read sensors, predict, and update
+    z = np.array([x_meas.value, y_meas.value, theta_meas.value]).T
+    f.predict()
+    f.update(z)
+
+    # Save results
+    allData = np.concatenate((np.array([now]), f.z.T, f.x.T))
+    sendSaveData.send(allData)
+
+    # exit condition
     key = cv2.waitKey(1) & 0xFF
-    if key == ord('q') or time.time() - startTime > runtime:                 
-        finishedRecording.value = True
-        print("Stopping all recording.")
+    if key == ord('q'):
         break
 
-# Cleanup
+# Clean up and shut down
 print("Cleaning up...")
 time.sleep(1)
-camera.stop_recording()
-process_marker_detection.terminate()
-process_marker_detection.join()
-process_data_saving.terminate()
-process_data_saving.join()
-cv2.destroyAllWindows()
+process_CV.terminate()
+process_CV.join()
+process_Data.terminate()
+process_Data.join()
 print("Done!")
