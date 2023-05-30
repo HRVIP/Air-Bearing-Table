@@ -113,7 +113,7 @@ def runKF(x_cv, z_cv, ax_imu, ay_imu, theta_cv, w_imu, sendSaveData, done):
                     [0., 0., 0., 0., 0., 0., -1., 0.],
                     [0., 0., 0., 0., 0., 1., 0., 0.],
                     [0., 0., -1., 0., 0., 0., 0., 0.],
-                    [0., 0., 0., 0., 0., 0., 0., 1.]])  # measurement matrix (map states to measurements)
+                    [0., 0., 0., 0., 0., 0., 0., 180.0 / np.pi]])  # measurement matrix (map states to measurements) - note that IMU works in deg/s!
     print("Setting up noise matrices...")
     f.P = 10 * np.identity(8) # TODO: this is a placeholder for cov matrix
     f.R = 8 * np.identity(6) # TODO: placeholder for measurement noise
@@ -227,19 +227,76 @@ for image in camera.capture_continuous(rawCapture, format="bgr", use_video_port=
 print("Cleaning up...")
 time.sleep(1)
 cv2.destroyAllWindows()
-process_KF.terminate()
 process_KF.join()
-process_CSV.terminate()
-process_CSV.join()
-process_IMU.terminate()
+process_KF.terminate()
 process_IMU.join()
+process_IMU.terminate()
+process_CSV.join()
+process_CSV.terminate()
 print("Done collecting data!")
 
+# Headings: 'Time', 'x_cv', 'z_cv', 'ax_imu', 'ay_imu', 'theta_cv', 'w_imu', 'x_out', 'vx_out','ax_out', 'y_out', 'vy_out', 'ay_out', 'theta_out', 'w_out'
+# +X(TABLE) = -Z(CV) = -Y(IMU)
+# +Y(TABLE) = +X(CV) = +X(IMU)
+# +Z(TABLE) = -Y(CV) = +Z(IMU)
 outdata = pd.read_csv(outfileCSV)
 deltaT = outdata.Time
+x_cv = outdata.x_cv
 z_cv = outdata.z_cv
+ax_imu = outdata.ax_imu
+ay_imu = outdata.ay_imu
+theta_cv = outdata.theta_cv
+w_imu = outdata.w_imu
 x_out = outdata.x_out
-plt.plot(deltaT, -1 * z_ct, label="measured")
-plt.plot(deltaT, theta_out, label="filtered")
-plt.legend()
+vx_out = outdata.vx_out
+ax_out = outdata.ax_out
+y_out = outdata.y_out
+vy_out = outdata.vy_out
+ay_out = outdata.ay_out
+theta_out = outdata.theta_out
+w_out = outdata.w_out
+x_out = outdata.x_out
+
+fig, axs = plt.subplots(4,2)
+
+axs[0,0].plot(deltaT, -1 * z_cv, label="measured")
+axs[0,0].plot(deltaT, x_out, label="filtered")
+axs[0,0].set_title('X POSITION')
+
+axs[1,0].plot(deltaT, vx_out, label="filtered")
+axs[1,0].set_title('X VELOCITY')
+
+axs[2,0].plot(deltaT, -1 * ay_imu, label="measured")
+axs[2,0].plot(deltaT, ax_out, label="filtered")
+axs[2,0].set_title('X ACCELERATION')
+
+axs[3,0].plot(deltaT, -1 * theta_cv, label="measured")
+axs[3,0].plot(deltaT, theta_out, label="filtered")
+axs[3,0].set_title('Z ROTATION')
+
+axs[0,1].plot(deltaT, x_cv, label="measured")
+axs[0,1].plot(deltaT, y_out, label="filtered")
+axs[0,1].set_title('Y POSITION')
+
+axs[1,1].plot(deltaT, vy_out, label="filtered")
+axs[1,1].set_title('Y VELOCITY')
+
+axs[2,1].plot(deltaT, ax_imu, label="measured")
+axs[2,1].plot(deltaT, ay_out, label="filtered")
+axs[2,1].set_title('Y ACCELERATION')
+
+axs[3,1].plot(deltaT, w_imu, label="measured")
+axs[3,1].plot(deltaT, w_out, label="filtered")
+axs[3,1].set_title('Z ANGULAR VELOCITY')
+
+for ax in axs.flat:
+    ax.set(xlabel='Time', ylabel='Value')
+
+for ax in axs.flat:
+    ax.label_outer()
+
+# for ax in axs:
+    # ax.legend()
+
+
 plt.show()
