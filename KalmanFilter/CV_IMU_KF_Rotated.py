@@ -112,7 +112,7 @@ def runKF(x_cv, z_cv, ax_imu, ay_imu, theta_cv, w_imu, sendSaveData, done):
     print("Setting up measurement matrix...")
     f.H = np.array([[0., 0., 0., 1., 0., 0., 0., 0.],
                     [-1., 0., 0., 0., 0., 0., 0., 0.],
-                    [0., 0., 0., 0., 0., 0., 1., 0.],
+                    [0., 0., 0., 0., 0., 1., 0., 0.],
                     [0., 0., -1., 0., 0., 0., 0., 0.],
                     [0., 0., 0., 0., 0., 0., -1., 0.],
                     [0., 0., 0., 0., 0., 0., 0., 1.]])  # measurement matrix (map states to measurements)
