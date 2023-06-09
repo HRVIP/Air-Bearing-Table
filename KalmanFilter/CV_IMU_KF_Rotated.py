@@ -79,17 +79,20 @@ outfile = outputDir + "/CV_IMU_KF_"+now.strftime("%m.%d.%y_%H.%M.%S")+"_{}FPS".f
 outfileCSV = outfile + ".csv"			# for pose estimate output
 outfileHeader = ['Time', 'x_cv', 'z_cv', 'ax_imu', 'ay_imu', 'theta_cv', 'w_imu', 'x_out', 'vx_out','ax_out', 'y_out', 'vy_out', 'ay_out', 'theta_out', 'w_out'] # header for CSV pose output
 
-
+### Duct-tape fix for 360-degree rotation - note that CV system reads -180 to 180 deg (-pi to pi rad)
+def limitRotationRange(a):
+    return a + (2*np.pi)*(a < -1 * np.pi) - (2*np.pi)*(a > np.pi)
+        
 ### Samples IMU
 def sampleIMU(ax_imu, ay_imu, w_imu, done):
-    w_offset = [-0.0748, 0.0346, 0.0155]
-    a_offset = [-0.0027, -0.1342, 10.1252]
+    w_offset = [-0.07459290202547218, 0.03367780128056928, 0.01478143476885542]
+    a_offset = [0.02343166004597995, -0.2361742073224371, 10.1161113076593329]	# TODO: run a longer IMU calib
     while (done.value != True):
-        w_vec = mpu.gyro
-        a_vec = mpu.acceleration
-        ax_imu.value = a_vec[0] - a_offset[0]
-        ay_imu.value = a_vec[1] - a_offset[1]
-        w_imu.value = w_vec[2] - w_offset[2]
+        w_x, w_y, w_z = mpu.gyro
+        a_x, a_y, a_z = mpu.acceleration
+        ax_imu.value = a_x - a_offset[0]
+        ay_imu.value = a_y - a_offset[1]
+        w_imu.value = w_z - w_offset[2]
     
     
 ### Runs Kalman Filter
@@ -100,7 +103,7 @@ def runKF(x_cv, z_cv, ax_imu, ay_imu, theta_cv, w_imu, sendSaveData, done):
     f = KalmanFilter(dim_x=8, dim_z=6)
     t_start = datetime.datetime.now()
     print("Created Kalman Filter! Setting up initial state...")
-    f.x = np.array([0.2, 0., 0., 0., 0., 0., 0., 0.])    # initial state (x, vx, ax, y, vy, ay, theta, wz)
+    f.x = np.array([-0.2, 0., 0., 0., 0., 0., 0., 0.])    # initial state (x, vx, ax, y, vy, ay, theta, wz)
     f.F = np.array([[1., dt, 0.5 * dt * dt, 0., 0., 0., 0., 0.],
                     [0., 1., dt, 0., 0., 0., 0., 0.],
                     [0., 0., 1., 0., 0., 0., 0., 0.], 
@@ -112,13 +115,13 @@ def runKF(x_cv, z_cv, ax_imu, ay_imu, theta_cv, w_imu, sendSaveData, done):
     print("Setting up measurement matrix...")
     f.H = np.array([[0., 0., 0., 1., 0., 0., 0., 0.],
                     [-1., 0., 0., 0., 0., 0., 0., 0.],
-                    [0., 0., 0., 0., 0., 0., 1., 0.],
+                    [0., 0., 0., 0., 0., 1., 0., 0.],
                     [0., 0., -1., 0., 0., 0., 0., 0.],
                     [0., 0., 0., 0., 0., 0., -1., 0.],
                     [0., 0., 0., 0., 0., 0., 0., 1.]])  # measurement matrix (map states to measurements)
     print("Setting up noise matrices...")
     f.P = 0.1 * np.identity(8) # TODO: this is a placeholder for cov matrix
-    f.R = 0.01 * np.identity(6) # TODO: placeholder for measurement noise
+    f.R = 0.1 * np.identity(6) # TODO: placeholder for measurement noise
     
     # We know IMU values - can plug those in now
     f.R[2,2] = 0.001084974			# x acceleration variance
@@ -131,7 +134,7 @@ def runKF(x_cv, z_cv, ax_imu, ay_imu, theta_cv, w_imu, sendSaveData, done):
     f.R[5,3] = -4.29785 * pow(10,-6)	# ay_wz covariance
     f.R[3,5] = -4.29785 * pow(10,-6)	# ay_wz covariance
     
-    f.Q = 0.05 * np.identity(8) # TODO: placeholder for process noise
+    f.Q = 0.01 * np.identity(8) # TODO: placeholder for process noise
 
     prev = datetime.datetime.now()
     while done.value != True:
@@ -140,6 +143,7 @@ def runKF(x_cv, z_cv, ax_imu, ay_imu, theta_cv, w_imu, sendSaveData, done):
         now = datetime.datetime.now()
         dt = (now - prev).total_seconds()
         prev = now
+        
 
         # Update state transition matrix using dt
         f.F = np.array([[1., dt, 0.5 * dt * dt, 0., 0., 0., 0., 0.],
@@ -152,9 +156,11 @@ def runKF(x_cv, z_cv, ax_imu, ay_imu, theta_cv, w_imu, sendSaveData, done):
                     [0., 0., 0., 0., 0., 0., 0., 1.]]) 
 
         # Read sensors, predict, and update
-        z = np.array([x_cv.value, z_cv.value, ax_imu.value, ay_imu.value, theta_cv.value, w_imu.value])
-        f.predict()
-        f.update(z.T)
+        z = np.array([x_cv.value, z_cv.value, ax_imu.value, ay_imu.value, theta_cv.value, w_imu.value])		# measurements
+        f.predict()								# prediction step
+        f.x[6] = limitRotationRange(f.x[6])		# limit rotation range from -pi to pi
+        f.update(z.T)							# update step
+        f.x[6] = limitRotationRange(f.x[6])		# limit rotation range from -pi to pi
 
         # Save results
         allData = np.concatenate((np.array([(now - t_start).total_seconds()]), f.z, f.x))
@@ -228,7 +234,7 @@ for image in camera.capture_continuous(rawCapture, format="bgr", use_video_port=
     # for air table: x-y is flat (corresponds to aruco x-z), z is up (corresponds to aruco y)
     x_cv.value = float(tMarkerFrame[0][0])		# horizontal placement of camera
     z_cv.value = float(tMarkerFrame[2][0])		# distance of camera from marker
-    theta_cv.value = float(rMarkerFrame[1][0])  # rotation of camera about vertical axis
+    theta_cv.value = float(rMarkerFrame[2][0])  # rotation of camera about vertical axis
     rawCapture.truncate(0)		# clear and prepare for next frame
 
     # Stop video if user quits
@@ -271,50 +277,54 @@ ay_out = outdata.ay_out
 theta_out = outdata.theta_out
 w_out = outdata.w_out
 
-fig, axs = plt.subplots(4,2)
+fig, axs = plt.subplots(nrows=4,ncols=2,sharex=True,sharey=False)
 
 axs[0,0].plot(deltaT, -1 * z_cv, label="measured")
 axs[0,0].plot(deltaT, x_out, label="filtered")
 axs[0,0].set_title('X POSITION')
 axs[0,0].legend()
+axs[0,0].set(ylabel='m')
 
 axs[1,0].plot(deltaT, vx_out, label="filtered")
 axs[1,0].set_title('X VELOCITY')
 axs[1,0].legend()
+axs[1,0].set(ylabel='m/s')
 
 axs[2,0].plot(deltaT, -1 * ay_imu, label="measured")
 axs[2,0].plot(deltaT, ax_out, label="filtered")
 axs[2,0].set_title('X ACCELERATION')
 axs[2,0].legend()
+axs[2,0].set(ylabel='m/s^2')
 
 axs[3,0].plot(deltaT, -1 * theta_cv, label="measured")
 axs[3,0].plot(deltaT, theta_out, label="filtered")
 axs[3,0].set_title('Z ROTATION')
 axs[3,0].legend()
+axs[3,0].set(xlabel='Time', ylabel='rad')
 
 axs[0,1].plot(deltaT, x_cv, label="measured")
 axs[0,1].plot(deltaT, y_out, label="filtered")
 axs[0,1].set_title('Y POSITION')
 axs[0,1].legend()
+axs[0,1].set(ylabel='m')
 
 axs[1,1].plot(deltaT, vy_out, label="filtered")
 axs[1,1].set_title('Y VELOCITY')
 axs[1,1].legend()
+axs[1,1].set(ylabel='m/s')
 
 axs[2,1].plot(deltaT, ax_imu, label="measured")
 axs[2,1].plot(deltaT, ay_out, label="filtered")
 axs[2,1].set_title('Y ACCELERATION')
 axs[2,1].legend()
+axs[2,1].set(ylabel='m/s^2')
 
 axs[3,1].plot(deltaT, w_imu, label="measured")
 axs[3,1].plot(deltaT, w_out, label="filtered")
 axs[3,1].set_title('Z ANGULAR VELOCITY')
 axs[3,1].legend()
-for ax in axs.flat:
-    ax.set(xlabel='Time', ylabel='Value')
+axs[3,1].set(xlabel='Time', ylabel='rad/s')
 
-# for ax in axs:
-    # ax.legend()
 
 
 plt.show()
