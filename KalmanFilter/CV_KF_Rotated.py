@@ -26,7 +26,7 @@ width = int(640)               					# output image width (px)
 height = int(480)              					# output image height (px)
 manager = Manager()								# manages values shared between processes
 finishedRecording = manager.Value(ctypes.c_bool, False)		# exit condition
-framerate = 24									# camera framerate
+framerate = 32									# camera framerate
 
 ### Import calibration parameters
 print("Import calibration parameters...")
@@ -169,12 +169,22 @@ for image in camera.capture_continuous(rawCapture, format="bgr", use_video_port=
     blur = cv2.GaussianBlur(frame, (11, 11), 0) 	# smooth image and remove Gaussian noise
     gray = cv2.cvtColor(blur, cv2.COLOR_BGR2GRAY)   # convert to grayscale
     corners, ids, rejectedImgPoints = aruco.detectMarkers(gray, arucoDict, parameters=arucoParams, cameraMatrix=cameraMatrix, distCoeff=distCoeffs) # marker detection
-    ret, rvec, tvec = aruco.estimatePoseBoard(corners, ids, board, cameraMatrix, distCoeffs, rvec_init, tvec_init)	# estimate board pose using markers
-    capWithAxes = cv2.drawFrameAxes(frame, cameraMatrix, distCoeffs, rvec, tvec, 0.1)		# real-time visualization: draw axes
+    ret, rCameraFrame, tCameraFrame = aruco.estimatePoseBoard(corners, ids, board, cameraMatrix, distCoeffs, rvec_init, tvec_init)	# estimate board pose using markers
+    capWithAxes = cv2.drawFrameAxes(frame, cameraMatrix, distCoeffs, rCameraFrame, tCameraFrame, 0.1)		# real-time visualization: draw axes
     cv2.imshow('video', capWithAxes)
-    x_meas.value = tvec[0]	# for debug
-    y_meas.value = tvec[1]
-    theta_meas.value = rvec[0]  # display image with axes
+    
+    # rotate into marker reference frame
+    # NOTE: current testing is with the cubesat marker. this rotation is just between that reference frame and the camera frame
+    rCameraFrameMatrix = cv2.Rodrigues(rCameraFrame)[0]				# convert rotation vector to matrix
+    rMarkerFrameMatrix = np.matrix(rCameraFrameMatrix).T			# transpose of rotation matrix is rotation of camera relative to markers
+    rMarkerFrame = cv2.Rodrigues(rMarkerFrameMatrix)[0]				# camera rotation relative to markers as a vector
+    tMarkerFrame = np.dot(rMarkerFrameMatrix, np.matrix(-1 * tCameraFrame).T)	# camera position relative to markers
+
+    # update MP values
+    # for air table: x-y is flat (corresponds to aruco x-z), z is up (corresponds to aruco y)
+    x_meas.value = float(tMarkerFrame[0][0])		# horizontal placement of camera
+    y_meas.value = float(tMarkerFrame[2][0])		# distance of camera from marker (x-y is "flat" for our purposes)
+    theta_meas.value = float(rMarkerFrame[1][0])  	# display image with axes
     rawCapture.truncate(0)		# clear and prepare for next frame
 
     # Stop video if user quits
