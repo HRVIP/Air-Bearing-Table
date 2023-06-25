@@ -1,4 +1,5 @@
 # Initial version of camera pose estimate for use with air-bearing table - RPi Camera
+# Detects pose of an ArUco marker in a single pre-saved image
 # References:
 # Ali Yasin Eser https://aliyasineser.medium.com/aruco-marker-tracking-with-opencv-8cb844c26628#:~:text=ArUco%20markers%20have%20sizes%20from,detect%20them%20in%20the%20image.
 # Josh Day https://github.com/jwday/ComputerVision/blob/master/utilities/calibration_checkerboard.py
@@ -10,9 +11,9 @@ import cv2.aruco as aruco
 import os
 
 ### Define useful constants
-marker_side_length = 0.040       # marker side length in m #TODO: determine this value
+marker_side_length = 0.040       # marker side length in m
 calibLoc = '../images/calibImages/calib.yaml'   # calibration file location
-imageLoc = '../images/image3.jpg'          # location of image to process
+imageLoc = '../images/image3.jpg'               # location of image to process
 width = int(1920)               # output image width
 height = int(1080)              # output image height
 
