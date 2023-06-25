@@ -1,3 +1,5 @@
+### Calibrate camera using pre-saved chessboard images
+
 ### Imports
 import numpy as np
 import cv2
@@ -66,9 +68,9 @@ def saveCalibrationData(mtx, dist, path):
     cv_file.release()
 
 ### Main function
-width = 21
-height = 20
-squareSize = 0.0254
+width = 21            # horizontal intersections
+height = 20           # vertical intersections
+squareSize = 0.0254   # side length (m)
 calibFiles = "images/piCameraCalibImages"
 destination = calibFiles + '/calib_py_april_7.yaml'
 ret, mtx, dist, rvecs, tvecs = calibrateCamera(calibFiles, width, height, squareSize)
