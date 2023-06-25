@@ -1,3 +1,5 @@
+# Automatically take photos for calibration using Raspberry Pi Camera
+
 # Imports
 import cv2
 import os
