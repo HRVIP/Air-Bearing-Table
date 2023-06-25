@@ -1,5 +1,5 @@
 # Pi Camera real-time video marker detection
-# VERY laggy, needs work
+# No data saving or multiproessing - just detects pose using a single processor
 
 ### Imports
 import numpy as np
