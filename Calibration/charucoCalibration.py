@@ -1,4 +1,4 @@
-# Camera calibration using ChAruco.
+# Camera calibration using ChAruco. Haven't yet tested w/ Pi Camera
 # Sources:
 # https://mecaruco2.readthedocs.io/en/latest/notebooks_rst/Aruco/sandbox/ludovic/aruco_calibration_rotation.html
 
