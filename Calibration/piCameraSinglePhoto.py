@@ -1,3 +1,5 @@
+# Take a single photo (or a specified number of pictures) with Raspberry Pi camera (mostly for testing purposes)
+
 # Imports
 import cv2
 import os
