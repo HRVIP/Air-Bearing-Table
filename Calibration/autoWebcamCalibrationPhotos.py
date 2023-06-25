@@ -4,30 +4,31 @@
 import cv2
 from datetime import datetime
 
-loc = '../images/calib_images_1_5in'  # Default location
+loc = '../images/calib_images_1_5in'  # Default location to store calibration images
 
 def capture(loc):
-    webcam = cv2.VideoCapture(0)
-    img_int = 0
+    webcam = cv2.VideoCapture(0)    # set up webcam
+    img_int = 0                     # loop variable
 
+    # Capture 100 calibration images (likely will need more for accurate calibration!)
     while img_int < 100:
+
+        # Read and display image
         check, frame = webcam.read()
         cv2.imshow("Capturing", frame)
         cv2.waitKey(500)
         print("Capturing image...")
+
+        # Save image
         img_filename = '/capture_' + str(img_int) + '.jpg'
         now = datetime.now()
         dt_string = now.strftime("%H:%M:%S")
         fileDir = loc + img_filename
         cv2.imwrite(fileDir, img=frame)
         img_int += 1
-        print("Processing image...")
-        img_read = cv2.imread(fileDir, cv2.IMREAD_ANYCOLOR)
-        print("Converting RGB image to grayscale...")
-        gray = cv2.cvtColor(img_read, cv2.COLOR_BGR2GRAY)
-        print("Converted RGB image to grayscale...")
         print("Image {} saved at {}.".format(img_filename, dt_string))
 
+    # Turn off camera
     print("Turning off camera.")
     webcam.release()
     print("Camera off.")
