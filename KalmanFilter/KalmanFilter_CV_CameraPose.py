@@ -1,6 +1,5 @@
-# Pi Camera real-time video marker detection
-# This version uses multiprocessing for improved performance
-# One process for video recording, one for data saving, and one for pose estimation
+# Estimates position/rotation of camera relative to a pre-defined ArUco board in real-time
+# Uses CV system only (no IMU)
 
 ### Imports
 import numpy as np
