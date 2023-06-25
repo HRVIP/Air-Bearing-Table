@@ -1,6 +1,5 @@
-# Pi Camera real-time video marker detection
-# This version uses multiprocessing for improved performance
-# One process for video recording, one for data saving, and one for pose estimation
+# Real-time pose estimation using computer vision system only
+# Estimates pose of board relative to camera and runs through a Kalman Filter
 
 ### Imports
 import numpy as np
