@@ -1,5 +1,5 @@
 # Onboard kalman filter with IMU and CV
-# One process for video recording, one for data saving, one for IMU, and one for pose estimation
+# Estimates position/attitude of camera relative to a pre-defined ArUco board
 
 # Imports
 import RPi.GPIO as GPIO
